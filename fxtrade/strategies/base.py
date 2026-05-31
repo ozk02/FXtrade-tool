@@ -16,23 +16,30 @@ from ..models import Candle, Position, Side
 
 class SignalType(enum.Enum):
     HOLD = "HOLD"
-    ENTER = "ENTER"
-    EXIT = "EXIT"
+    ENTER = "ENTER"   # 新規建て（ノーポジ時）
+    ADD = "ADD"       # 増し玉（ナンピン: 同方向に積み増す）
+    EXIT = "EXIT"     # 手仕舞い（全決済）
 
 
 @dataclass
 class Signal:
     type: SignalType
-    side: Optional[Side] = None  # ENTER のときの方向
+    side: Optional[Side] = None  # ENTER / ADD のときの方向
     reason: str = ""
+    # ENTER/ADD のロットを基準サイズの何倍にするか（ナンピンのマーチンゲール等に使う）。
+    size_mult: Decimal = Decimal("1")
 
     @classmethod
     def hold(cls) -> "Signal":
         return cls(SignalType.HOLD)
 
     @classmethod
-    def enter(cls, side: Side, reason: str = "") -> "Signal":
-        return cls(SignalType.ENTER, side=side, reason=reason)
+    def enter(cls, side: Side, reason: str = "", size_mult=Decimal("1")) -> "Signal":
+        return cls(SignalType.ENTER, side=side, reason=reason, size_mult=Decimal(str(size_mult)))
+
+    @classmethod
+    def add(cls, side: Side, reason: str = "", size_mult=Decimal("1")) -> "Signal":
+        return cls(SignalType.ADD, side=side, reason=reason, size_mult=Decimal(str(size_mult)))
 
     @classmethod
     def exit(cls, reason: str = "") -> "Signal":

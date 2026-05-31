@@ -10,8 +10,17 @@ strategy:
     direction: long          # long(押し目買い) / short(戻り売り)
     entry_drop_pct: 0.5      # anchorから何%動いたらエントリするか
     take_profit_pct: 1.0     # 利確(%)
-    stop_loss_pct: 0.5       # 損切り(%)
+    stop_loss_pct: 2.0       # 損切り(%) ※ナンピンより大きくしないと先に損切りされる
     trail_anchor: true       # ノーポジ時にanchorを有利方向へ追従
+    # --- ナンピン（％下落ごとの増し玉） ---
+    nanpin_enabled: true     # 増し玉を有効化
+    nanpin_step_pct: 0.5     # 初回建値から何%ごとに増し玉するか
+    max_nanpin: 3            # 最大増し玉回数
+    nanpin_size_mult: 1.0    # 増し玉ごとのロット倍率(>1でマーチンゲール的)
+    # --- トレーリングストップ ---
+    trailing_enabled: true   # トレーリングストップを有効化
+    trailing_pct: 0.5        # 最有利値から何%戻したら手仕舞いするか
+    trailing_activate_pct: 0.5  # 含み益が何%に達したらトレーリング開始(0=常時)
 
 risk:
   risk_per_trade_pct: 1.0    # 1トレードで取るリスク(口座残高の%)

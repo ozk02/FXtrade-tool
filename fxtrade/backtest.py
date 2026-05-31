@@ -11,9 +11,10 @@ from decimal import Decimal
 from typing import Iterable, List, Optional
 
 from .brokers.paper import PaperBroker
-from .models import Candle, Order, OrderType, Side, Trade
+from .engine import TradingEngine
+from .models import Candle, Order, OrderType, Trade
 from .risk import RiskManager
-from .strategies.base import SignalType, Strategy
+from .strategies.base import Strategy
 
 
 @dataclass
@@ -98,37 +99,16 @@ class Backtester:
             spread_pips=self.spread_pips,
             pip_size=self.pip_size,
         )
+        # ライブと同じ売買ロジック(ENTER/ADD/EXIT, ナンピン, トレーリング)を共有する。
+        engine = TradingEngine(self.symbol, self.strategy, broker, self.risk)
         equity_curve: List[Decimal] = []
         last_close: Optional[Decimal] = None
-
-        # 戦略の損切り幅をサイジングに使う（無ければ既定 0.5%）。
-        sl_pct = getattr(self.strategy, "stop_loss_pct", Decimal("0.5"))
+        last_ts = None
 
         for candle in candles:
             last_close = candle.close
-            position = broker.get_position(self.symbol)
-            signal = self.strategy.on_candle(candle, position)
-
-            if signal.type is SignalType.ENTER and position is None:
-                if self.risk.can_open(len(broker.positions())):
-                    units = self.risk.position_size(
-                        broker.equity({self.symbol: candle.close}),
-                        candle.close,
-                        Decimal(str(sl_pct)),
-                    )
-                    if units > 0:
-                        broker.submit(
-                            Order(self.symbol, signal.side, units, OrderType.MARKET, reason=signal.reason),
-                            candle.close,
-                            candle.timestamp,
-                        )
-            elif signal.type is SignalType.EXIT and position is not None:
-                broker.submit(
-                    Order(self.symbol, position.side.opposite, position.units, OrderType.MARKET, reason=signal.reason),
-                    candle.close,
-                    candle.timestamp,
-                )
-
+            last_ts = candle.timestamp
+            engine.on_candle(candle)
             equity_curve.append(broker.equity({self.symbol: candle.close}))
 
         # テスト終了時に建玉が残っていれば最終価格で手仕舞いして損益を確定。
@@ -137,7 +117,7 @@ class Backtester:
             broker.submit(
                 Order(self.symbol, position.side.opposite, position.units, OrderType.MARKET, reason="backtest end close"),
                 last_close,
-                candle.timestamp,
+                last_ts,
             )
 
         final_equity = broker.equity({self.symbol: last_close} if last_close else {})
