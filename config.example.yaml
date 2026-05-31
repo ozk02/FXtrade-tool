@@ -1,0 +1,28 @@
+# FXtrade-tool 設定例
+# PyYAML が無い環境でもこの程度の単純な YAML は読めるが、確実を期すなら JSON でもよい。
+
+symbol: USD_JPY
+initial_cash: 1000000        # 初期資金(円)
+
+strategy:
+  name: price_percent
+  params:
+    direction: long          # long(押し目買い) / short(戻り売り)
+    entry_drop_pct: 0.5      # anchorから何%動いたらエントリするか
+    take_profit_pct: 1.0     # 利確(%)
+    stop_loss_pct: 0.5       # 損切り(%)
+    trail_anchor: true       # ノーポジ時にanchorを有利方向へ追従
+
+risk:
+  risk_per_trade_pct: 1.0    # 1トレードで取るリスク(口座残高の%)
+  max_units: 100000          # 1ポジション最大ロット(通貨単位)
+  max_positions: 1           # 同時保有ポジション数
+
+broker:
+  name: paper                # paper(シミュレーション) / rakuten(差込み口)
+  params:
+    spread_pips: 0.2
+    pip_size: 0.01           # USD/JPYは0.01。EUR/USD等は0.0001
+    # rakuten を使う場合の例:
+    # bridge: marketspeed_rss
+    # dry_run: true

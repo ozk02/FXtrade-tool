@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# テスト/カバレッジ
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 設定・認証情報（実運用の秘匿情報をコミットしない）
+config.yaml
+config.json
+.env
+*.secret
+
+# 生成データ
+data/*.csv
+!data/.gitkeep
+
+# OS
+.DS_Store

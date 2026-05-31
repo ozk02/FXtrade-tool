@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fxtrade-tool"
+version = "0.1.0"
+description = "価格と％で売買するFX自動売買ツール（バックテスト/ペーパートレード/差込み式実発注）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+dependencies = []  # 標準ライブラリのみで動作
+
+[project.optional-dependencies]
+yaml = ["PyYAML>=6.0"]   # YAML設定を厳密に扱いたい場合（無くても簡易パーサで動作）
+
+[project.scripts]
+fxtrade = "fxtrade.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["fxtrade*"]
