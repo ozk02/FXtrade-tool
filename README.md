@@ -98,8 +98,16 @@ fxtrade/
 ├── cli.py               CLI (gen-data / backtest / paper)
 ├── data/                マーケットデータ供給 (CSV / 合成データ)
 ├── strategies/          戦略 (base + price_percent, レジストリ)
-└── brokers/             ブローカー (base + paper + rakuten差込み口)
+└── brokers/             ブローカー
+    ├── base.py          Broker プロトコル
+    ├── position_book.py 建玉/現金/約定履歴の共通会計
+    ├── paper.py         ペーパートレード(仮想ブローカー)
+    ├── rss_bridge.py    Excel/RSS 橋渡し (実機=xlwings/pywin32, テスト=Fake)
+    └── rakuten.py       楽天 MarketSpeed II RSS 連携 (fetch_price/_place_order)
 ```
+
+楽天 RSS 連携の VBA 発注マクロのサンプルは `docs/rss_order_macro.vba`、設定例は
+`config.rakuten.example.yaml` を参照。
 
 設計の要点:
 - **戦略は純粋ロジック** — 足とポジションを受け取りシグナルを返すだけ。発注はエンジン/ブローカー。
@@ -125,11 +133,43 @@ fxtrade/
 `fxtrade/strategies/base.py` の `Strategy` を継承し、`strategies/__init__.py` の
 `REGISTRY` に登録するだけです。
 
-### 楽天証券（実発注）を実装する場合
+### 楽天証券 MarketSpeed II RSS 連携（実発注）
 
-`fxtrade/brokers/rakuten.py` の `_place_order` / `fetch_price` を、MarketSpeed II RSS 等の
-連携方式で実装します。**利用規約・約款を必ず確認**し、`dry_run=True` で十分に検証してから
-実発注を有効化してください。
+`fxtrade/brokers/rakuten.py` に **MarketSpeed II RSS 連携を具体実装済み**です。
+Excel 経由（`xlwings` / `pywin32`）でセル読み書き・VBA マクロ実行を行います。
+
+**前提（重要）**
+- **Windows + Excel + MarketSpeed II（RSS 有効）** が必須。Python から Excel を操作します。
+- 気配取得は RSS のマーケット関数（セル関数）を読む安全な方式。
+- 発注は**誤発注防止のため VBA 発注マクロ経由**。Python はパラメータをセルに書き、
+  あなたの発注マクロを `Application.Run` で呼び、結果セルを読みます。
+- **RSS の発注対象は国内株式・先物等**が中心で、店頭FX(楽天FX)の自動発注の可否は
+  契約・規約に依存します。関数名・売買区分コード・セル位置は環境差があるため
+  `cell_map` で**設定可能**にしてあります。必ず公式
+  「MARKETSPEED II RSS 関数リファレンス」で確認してください。
+
+**セットアップ手順**
+1. Windows で MarketSpeed II を起動し、RSS（Excel アドイン）を有効化。
+2. `pip install xlwings`（または `pip install pywin32`）。
+3. Excel で取引用ブックを開き、`docs/rss_order_macro.vba` を参考に発注マクロ
+   `RssSendOrder` を実装（★RSS の発注関数は公式リファレンスに合わせて置換）。
+4. `config.rakuten.example.yaml` をコピーし、`cell_map`（セル配置）・`symbol_codes`
+   （RSS 銘柄コード）・売買区分コードを自分のシートに合わせて編集。
+5. **まず `dry_run: true` のまま**実行し、発注フロー/価格取得を検証。
+   ```bash
+   python3 -m fxtrade paper --config config.rakuten.example.yaml
+   ```
+6. 十分に確認できたら `dry_run: false` にして少額で実発注テスト。
+
+**動作の流れ**
+- `fetch_price(symbol)`: `quote_code_cell` に銘柄コードを書き、`quote_value_cell` に
+  RSS 関数式を投入 → 数値が入るまでポーリングして現在値を返す。
+- `submit()`（`dry_run=False`）: 発注セル群へパラメータを書き込み → `order_macro` を実行 →
+  `order_status_cell` が成功トークン（または数値の注文番号）になるまで待ち、
+  `fill_price_cell` から約定価格を取得して建玉に反映。失敗時は `RuntimeError`。
+- `dry_run=True` のときは実発注せず、参照価格で擬似約定して建玉のみ更新（ログに `[DRY-RUN]`）。
+
+> ⚠️ 実発注は必ず**利用規約・約款を確認**し、自己責任で。誤発注・損失の責任は負いません。
 
 ## テスト
 

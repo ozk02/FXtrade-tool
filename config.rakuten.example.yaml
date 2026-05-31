@@ -1,0 +1,55 @@
+# 楽天証券 MarketSpeed II RSS 連携の設定例（実発注）
+#
+# 前提: Windows + Excel + MarketSpeed II(RSS有効) が起動済みで、
+#       下記 cell_map のレイアウトと発注マクロ(order_macro)を用意したブックを開いていること。
+#       まずは dry_run: true で検証し、十分に確認してから false にすること。
+
+symbol: USD_JPY
+initial_cash: 1000000
+
+strategy:
+  name: price_percent
+  params:
+    direction: long
+    entry_drop_pct: 0.5
+    take_profit_pct: 1.0
+    stop_loss_pct: 2.0
+    trailing_enabled: true
+    trailing_pct: 0.5
+
+risk:
+  risk_per_trade_pct: 1.0
+  max_units: 10000           # FXの最大ロット(通貨単位)。実口座の余力に合わせる。
+  max_positions: 1
+
+broker:
+  name: rakuten
+  params:
+    dry_run: true            # ★実発注しない安全モード。検証後に false へ。
+    sheet: Sheet1            # 連携するワークシート名
+    # workbook: C:\path\to\rss_trade.xlsm   # 省略時はアクティブブック
+    poll_interval: 0.3       # RSS応答のポーリング間隔(秒)
+    poll_timeout: 10.0       # タイムアウト(秒)
+    cell_map:
+      # --- 気配取得 ---
+      quote_code_cell: B1
+      quote_value_cell: B2
+      quote_formula_template: '=RssMarket({code},"現在値")'  # 関数名は公式リファレンスで要確認
+      # --- 発注パラメータ ---
+      order_code_cell: E1
+      order_side_cell: E2
+      order_qty_cell: E3
+      order_type_cell: E4
+      order_price_cell: E5
+      # --- 発注トリガ/結果 ---
+      order_macro: RssSendOrder     # 下記サンプルVBAのマクロ名
+      order_status_cell: E6
+      fill_price_cell: E7
+      order_id_cell: E8
+      # --- マッピング ---
+      symbol_codes:
+        USD_JPY: USDJPY             # RSSの銘柄コード(株式なら証券コード)に合わせる
+      buy_code: BUY                 # 売買区分。株式RSS等では数値コードに変更
+      sell_code: SELL
+      market_type: MARKET
+      limit_type: LIMIT
