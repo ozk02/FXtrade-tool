@@ -101,6 +101,13 @@ def cmd_paper(args) -> int:
     return 0
 
 
+def cmd_ui(args) -> int:
+    from .webui import serve
+
+    serve(host=args.host, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fxtrade", description="価格と％で売買するFX自動売買ツール")
     sub = p.add_subparsers(dest="command", required=True)
@@ -128,6 +135,12 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--n", type=int, default=500)
     pp.add_argument("--seed", type=int, default=42)
     pp.set_defaults(func=cmd_paper)
+
+    ui = sub.add_parser("ui", help="ブラウザで使うデモトレードUIを起動")
+    ui.add_argument("--host", default="127.0.0.1")
+    ui.add_argument("--port", type=int, default=8000)
+    ui.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
+    ui.set_defaults(func=cmd_ui)
 
     return p
 
