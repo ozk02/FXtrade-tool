@@ -17,8 +17,11 @@ from .backtest import Backtester
 from .config import RiskConfig
 from .data.csv_feed import CSVFeed
 from .data.sample import generate_random_walk
+from .indicators import ADX
 from .risk import RiskManager
+from .strategies.ma_cross import MACrossStrategy
 from .strategies.price_percent import PricePercentStrategy
+from .strategies.regime import RegimeFilterStrategy
 
 
 def _f(v, default=0.0) -> float:
@@ -39,15 +42,15 @@ def _b(v) -> bool:
     return bool(v) and str(v).lower() not in ("false", "0", "off", "no")
 
 
-def run_backtest(params: dict) -> dict:
-    """フォームのパラメータでバックテストを実行し、UI向けJSONを返す。"""
-    symbol = params.get("symbol") or "USD_JPY"
-    initial_cash = _f(params.get("initial_cash"), 1_000_000)
-    n = max(20, min(_i(params.get("n"), 500), 5000))
-    seed = _i(params.get("seed"), 42)
-    csv_path = params.get("csv") or None
+STRATEGY_LABELS = {
+    "price_percent": "逆張り（価格と％）",
+    "ma_cross": "順張り（移動平均クロス）",
+    "regime": "自動切替（ADXレジーム）",
+}
 
-    strategy = PricePercentStrategy(
+
+def _build_price_percent(params: dict) -> PricePercentStrategy:
+    return PricePercentStrategy(
         direction=params.get("direction") or "long",
         entry_drop_pct=_f(params.get("entry_drop_pct"), 0.5),
         take_profit_pct=_f(params.get("take_profit_pct"), 1.0),
@@ -61,6 +64,63 @@ def run_backtest(params: dict) -> dict:
         trailing_pct=_f(params.get("trailing_pct"), 0.5),
         trailing_activate_pct=_f(params.get("trailing_activate_pct"), 0.0),
     )
+
+
+def _build_ma_cross(params: dict) -> MACrossStrategy:
+    return MACrossStrategy(
+        fast_period=_i(params.get("fast_period"), 20),
+        slow_period=_i(params.get("slow_period"), 50),
+        ma_type=params.get("ma_type") or "ema",
+        allow_short=_b(params.get("allow_short", True)),
+        stop_loss_pct=_f(params.get("ma_stop_loss_pct"), 1.0),
+        take_profit_pct=_f(params.get("ma_take_profit_pct"), 0.0),
+        trailing_enabled=_b(params.get("trailing_enabled")),
+        trailing_pct=_f(params.get("trailing_pct"), 0.5),
+        trailing_activate_pct=_f(params.get("trailing_activate_pct"), 0.0),
+    )
+
+
+def build_strategy_from_params(params: dict):
+    """UIのフォーム値から戦略を組み立てる。"""
+    kind = params.get("strategy_type") or "price_percent"
+    if kind == "price_percent":
+        return _build_price_percent(params)
+    if kind == "ma_cross":
+        return _build_ma_cross(params)
+    if kind == "regime":
+        # 同じフォーム値で順張り/逆張りの両方を作り、ADXで切り替える。
+        return RegimeFilterStrategy(
+            trend=_build_ma_cross(params),
+            ranging=_build_price_percent(params),
+            adx_period=_i(params.get("adx_period"), 14),
+            adx_threshold=_f(params.get("adx_threshold"), 25.0),
+        )
+    raise ValueError(f"unknown strategy: {kind}")
+
+
+def _regime_series(candles, period: int, threshold: float):
+    """各足がトレンド相場かレンジ相場かを判定した系列を返す（チャートの背景用）。"""
+    adx = ADX(period)
+    th = Decimal(str(threshold))
+    out = []
+    for c in candles:
+        v = adx.update(c.high, c.low, c.close)
+        if v is None:
+            out.append("warmup")
+        else:
+            out.append("trend" if v >= th else "range")
+    return out
+
+
+def run_backtest(params: dict) -> dict:
+    """フォームのパラメータでバックテストを実行し、UI向けJSONを返す。"""
+    symbol = params.get("symbol") or "USD_JPY"
+    initial_cash = _f(params.get("initial_cash"), 1_000_000)
+    n = max(20, min(_i(params.get("n"), 500), 5000))
+    seed = _i(params.get("seed"), 42)
+    csv_path = params.get("csv") or None
+
+    strategy = build_strategy_from_params(params)
     risk = RiskManager(
         RiskConfig(
             risk_per_trade_pct=Decimal(str(_f(params.get("risk_per_trade_pct"), 1.0))),
@@ -105,7 +165,8 @@ def run_backtest(params: dict) -> dict:
         if ci is not None:
             markers.append({"i": ci, "price": float(t.exit_price), "kind": "exit", "side": t.side.value})
 
-    return {
+    kind = params.get("strategy_type") or "price_percent"
+    out = {
         "summary": {
             "initial_cash": float(result.initial_cash),
             "final_equity": float(result.final_equity),
@@ -122,7 +183,20 @@ def run_backtest(params: dict) -> dict:
         "markers": markers,
         "trades": trades,
         "symbol": symbol,
+        "strategy": kind,
+        "strategy_label": STRATEGY_LABELS.get(kind, kind),
     }
+
+    if kind == "regime":
+        # チャートにトレンド相場の区間を重ねて、切り替わりを見えるようにする。
+        regimes = _regime_series(candles, _i(params.get("adx_period"), 14), _f(params.get("adx_threshold"), 25.0))
+        judged = [r for r in regimes if r != "warmup"]
+        out["regimes"] = regimes
+        out["regime_summary"] = {
+            "trend_pct": (100.0 * sum(1 for r in judged if r == "trend") / len(judged)) if judged else 0.0,
+            "range_pct": (100.0 * sum(1 for r in judged if r == "range") / len(judged)) if judged else 0.0,
+        }
+    return out
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -205,6 +279,8 @@ PAGE = r"""<!DOCTYPE html>
   button { margin-top:16px; width:100%; padding:12px; border:0; border-radius:10px; background:var(--accent); color:#062a3a; font-weight:700; font-size:15px; cursor:pointer; }
   button:hover { filter:brightness(1.07); }
   .hint { font-size:11px; color:var(--muted); margin-top:2px; }
+  .sec { font-size:12px; color:var(--accent); margin:16px 0 2px; border-top:1px solid #334155; padding-top:10px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; background:#0b1220; color:var(--muted); margin-bottom:8px; }
   .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:14px; }
   .card { background:#0b1220; border-radius:10px; padding:10px; text-align:center; }
   .card .k { font-size:11px; color:var(--muted); }
@@ -237,24 +313,64 @@ PAGE = r"""<!DOCTYPE html>
       <div><label>初期資金(円)</label><input type="number" id="initial_cash" value="1000000" step="100000"></div>
     </div>
     <div class="row">
-      <div><label>売買方向</label>
-        <select id="direction"><option value="long">買い(押し目)</option><option value="short">売り(戻り)</option></select></div>
       <div><label>相場の本数</label><input type="number" id="n" value="500" step="100"></div>
+      <div><label>シード(乱数)</label><input type="number" id="seed" value="42" step="1"></div>
     </div>
 
-    <label>エントリ: 何%動いたら(entry)</label>
-    <input type="number" id="entry_drop_pct" value="0.5" step="0.1">
-    <div class="row">
-      <div><label>利確 %</label><input type="number" id="take_profit_pct" value="1.0" step="0.1"></div>
-      <div><label>損切り %</label><input type="number" id="stop_loss_pct" value="2.0" step="0.1"></div>
+    <label>売買ロジック</label>
+    <select id="strategy_type">
+      <option value="price_percent">逆張り（価格と％）</option>
+      <option value="ma_cross">順張り（移動平均クロス）</option>
+      <option value="regime" selected>自動切替（ADXレジーム）</option>
+    </select>
+    <div class="hint" id="strategy_hint"></div>
+
+    <!-- 逆張り(価格と％)の設定 -->
+    <div id="grp_pp">
+      <div class="sec">▼ 逆張りの設定</div>
+      <div class="row">
+        <div><label>売買方向</label>
+          <select id="direction"><option value="long">買い(押し目)</option><option value="short">売り(戻り)</option></select></div>
+        <div><label>エントリ: 何%動いたら</label><input type="number" id="entry_drop_pct" value="0.5" step="0.1"></div>
+      </div>
+      <div class="row">
+        <div><label>利確 %</label><input type="number" id="take_profit_pct" value="1.0" step="0.1"></div>
+        <div><label>損切り %</label><input type="number" id="stop_loss_pct" value="2.0" step="0.1"></div>
+      </div>
+      <label class="switch"><input type="checkbox" id="nanpin_enabled"> ナンピン(増し玉)を使う</label>
+      <div class="row">
+        <div><label>下落幅 %/回</label><input type="number" id="nanpin_step_pct" value="0.5" step="0.1"></div>
+        <div><label>最大回数</label><input type="number" id="max_nanpin" value="3" step="1"></div>
+      </div>
     </div>
 
-    <label class="switch"><input type="checkbox" id="nanpin_enabled"> ナンピン(増し玉)を使う</label>
-    <div class="row">
-      <div><label>下落幅 %/回</label><input type="number" id="nanpin_step_pct" value="0.5" step="0.1"></div>
-      <div><label>最大回数</label><input type="number" id="max_nanpin" value="3" step="1"></div>
+    <!-- 順張り(移動平均クロス)の設定 -->
+    <div id="grp_ma">
+      <div class="sec">▼ 順張りの設定</div>
+      <div class="row">
+        <div><label>短期MA</label><input type="number" id="fast_period" value="20" step="1"></div>
+        <div><label>長期MA</label><input type="number" id="slow_period" value="50" step="1"></div>
+      </div>
+      <div class="row">
+        <div><label>MAの種類</label>
+          <select id="ma_type"><option value="ema">EMA(指数)</option><option value="sma">SMA(単純)</option></select></div>
+        <div><label>損切り %</label><input type="number" id="ma_stop_loss_pct" value="1.0" step="0.1"></div>
+      </div>
+      <label class="switch"><input type="checkbox" id="allow_short" checked> 売り(ショート)も使う</label>
+      <div class="hint">利確はクロスまで持つ設計（利大損小を狙う型）。</div>
     </div>
 
+    <!-- ADXレジームの設定 -->
+    <div id="grp_adx">
+      <div class="sec">▼ 相場判定(ADX)の設定</div>
+      <div class="row">
+        <div><label>ADX期間</label><input type="number" id="adx_period" value="14" step="1"></div>
+        <div><label>しきい値</label><input type="number" id="adx_threshold" value="25" step="1"></div>
+      </div>
+      <div class="hint">ADXがしきい値以上=トレンド相場→順張り、未満=レンジ相場→逆張り。</div>
+    </div>
+
+    <div class="sec">▼ 共通</div>
     <label class="switch"><input type="checkbox" id="trailing_enabled" checked> トレーリングストップを使う</label>
     <div class="row">
       <div><label>戻り幅 %</label><input type="number" id="trailing_pct" value="0.5" step="0.1"></div>
@@ -263,8 +379,7 @@ PAGE = r"""<!DOCTYPE html>
 
     <label>1トレードのリスク %（残高に対して）</label>
     <input type="number" id="risk_per_trade_pct" value="1.0" step="0.5">
-    <div class="hint">乱数の相場で検証します。「シード」を固定すると同じ相場で比較できます。</div>
-    <label>シード(乱数)</label><input type="number" id="seed" value="42" step="1">
+    <div class="hint">乱数の相場で検証します。「シード」を変えると別の相場になります。同じ数字なら同じ相場で比較できます。</div>
 
     <button id="run">▶ デモ実行</button>
     <div id="err" class="err"></div>
@@ -281,7 +396,8 @@ PAGE = r"""<!DOCTYPE html>
         <div class="card"><div class="k">勝率</div><div class="v" id="c_win">-</div></div>
         <div class="card"><div class="k">最大DD</div><div class="v" id="c_dd">-</div></div>
       </div>
-      <div class="chart-title">価格チャート（▲買い ▼売り）</div>
+      <div class="pill" id="c_kind"></div>
+      <div class="chart-title">価格チャート（▲買い ▼売り）<span id="legend" style="display:none"> ／ <span style="color:#818cf8">■</span> 紫の帯 = トレンド相場と判定した区間（順張りに切替）</span></div>
       <svg id="priceChart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
       <div class="chart-title">資産推移（有効証拠金）</div>
       <svg id="equityChart" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
@@ -300,14 +416,30 @@ const yen = n => (n>=0?'+':'') + Math.round(n).toLocaleString() + '円';
 const pct = n => (n>=0?'+':'') + n.toFixed(2) + '%';
 const cls = n => n>=0 ? 'pos' : 'neg';
 
+const HINTS = {
+  price_percent: '価格が一定%動いたら逆に張る型。レンジ相場に強く、トレンドに弱い。',
+  ma_cross: '短期MAが長期MAを抜けた向きに乗る型。トレンドに強く、レンジで細かく負ける。勝率は低め。',
+  regime: 'ADXで相場を判定し、トレンド相場なら順張り・レンジ相場なら逆張りに自動で切り替える。'
+};
+
 function collect(){
   const ids = ['symbol','initial_cash','direction','n','entry_drop_pct','take_profit_pct','stop_loss_pct',
-    'nanpin_step_pct','max_nanpin','trailing_pct','trailing_activate_pct','risk_per_trade_pct','seed'];
+    'nanpin_step_pct','max_nanpin','trailing_pct','trailing_activate_pct','risk_per_trade_pct','seed',
+    'strategy_type','fast_period','slow_period','ma_type','ma_stop_loss_pct','adx_period','adx_threshold'];
   const p = {};
   ids.forEach(i => p[i] = $(i).value);
   p.nanpin_enabled = $('nanpin_enabled').checked;
   p.trailing_enabled = $('trailing_enabled').checked;
+  p.allow_short = $('allow_short').checked;
   return p;
+}
+
+function syncForm(){
+  const k = $('strategy_type').value;
+  $('grp_pp').style.display  = (k==='price_percent' || k==='regime') ? 'block' : 'none';
+  $('grp_ma').style.display  = (k==='ma_cross'      || k==='regime') ? 'block' : 'none';
+  $('grp_adx').style.display = (k==='regime') ? 'block' : 'none';
+  $('strategy_hint').textContent = HINTS[k] || '';
 }
 
 function pathFrom(arr, w, h, pad){
@@ -331,10 +463,26 @@ function scaleXY(arr, w, h, pad){
   };
 }
 
-function drawPrice(prices, markers){
+function drawPrice(prices, markers, regimes){
   const w=600,h=220,pad=10;
   const sc = scaleXY(prices, w, h, pad);
-  let svg = `<path d="${pathFrom(prices,w,h,pad)}" fill="none" stroke="#38bdf8" stroke-width="1.5"/>`;
+  let svg = '';
+  // トレンド相場と判定された区間を背景に敷く（自動切替のときだけ）
+  if(regimes && regimes.length===prices.length){
+    const n = prices.length;
+    const xOf = i => pad + (w-2*pad) * (n<=1?0:i/(n-1));
+    let start = null;
+    for(let i=0;i<=n;i++){
+      const isTrend = i<n && regimes[i]==='trend';
+      if(isTrend && start===null) start = i;
+      if(!isTrend && start!==null){
+        const x1 = xOf(start), x2 = xOf(i-1);
+        svg += `<rect x="${x1.toFixed(1)}" y="0" width="${Math.max(1,x2-x1).toFixed(1)}" height="${h}" fill="#6366f1" opacity="0.18"/>`;
+        start = null;
+      }
+    }
+  }
+  svg += `<path d="${pathFrom(prices,w,h,pad)}" fill="none" stroke="#38bdf8" stroke-width="1.5"/>`;
   markers.forEach(m=>{
     const [x,y] = sc(m.i);
     const entry = m.kind==='entry';
@@ -372,7 +520,13 @@ async function run(){
     $('c_ret').innerHTML = `<span class="${cls(s.total_return_pct)}">${pct(s.total_return_pct)}</span>`;
     $('c_win').textContent = s.win_rate.toFixed(0) + '%';
     $('c_dd').textContent = s.max_drawdown_pct.toFixed(1) + '%';
-    drawPrice(data.prices, data.markers);
+    let badge = 'ロジック: ' + data.strategy_label;
+    if(data.regime_summary){
+      badge += ` ／ この相場は トレンド ${data.regime_summary.trend_pct.toFixed(0)}% ・ レンジ ${data.regime_summary.range_pct.toFixed(0)}%`;
+    }
+    $('c_kind').textContent = badge;
+    $('legend').style.display = data.regimes ? 'block' : 'none';
+    drawPrice(data.prices, data.markers, data.regimes);
     drawEquity(data.equity, s.initial_cash);
     $('tcount').textContent = data.trades.length;
     $('trows').innerHTML = data.trades.map(t=>`<tr>
@@ -386,6 +540,8 @@ async function run(){
   finally{ $('run').textContent='▶ デモ実行'; $('run').disabled=false; }
 }
 $('run').addEventListener('click', run);
+$('strategy_type').addEventListener('change', syncForm);
+syncForm();
 run(); // 初回自動実行
 </script>
 </body>

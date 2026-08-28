@@ -28,6 +28,26 @@ class TestWebUIBackend(unittest.TestCase):
         self.assertEqual(out["symbol"], "USD_JPY")
         self.assertEqual(len(out["prices"]), 150)
 
+    def test_ma_cross_strategy_selectable(self):
+        out = run_backtest({"strategy_type": "ma_cross", "n": 300, "seed": 4,
+                            "fast_period": 10, "slow_period": 30})
+        self.assertEqual(out["strategy"], "ma_cross")
+        self.assertIn("順張り", out["strategy_label"])
+        self.assertNotIn("regimes", out)   # レジーム帯は自動切替のときだけ
+
+    def test_regime_strategy_returns_regime_series(self):
+        out = run_backtest({"strategy_type": "regime", "n": 400, "seed": 4,
+                            "adx_period": 14, "adx_threshold": 25})
+        self.assertEqual(out["strategy"], "regime")
+        self.assertEqual(len(out["regimes"]), 400)
+        self.assertTrue(set(out["regimes"]) <= {"trend", "range", "warmup"})
+        rs = out["regime_summary"]
+        self.assertAlmostEqual(rs["trend_pct"] + rs["range_pct"], 100.0, places=6)
+
+    def test_unknown_strategy_raises(self):
+        with self.assertRaises(ValueError):
+            run_backtest({"strategy_type": "nope"})
+
     def test_profit_factor_infinity_serialized_as_null(self):
         # 全勝(損失なし)だと PF=Infinity → JSON化のため None になる
         out = run_backtest({

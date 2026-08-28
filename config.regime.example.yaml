@@ -1,0 +1,55 @@
+# ADXレジームフィルター設定例
+#   トレンド相場 → 順張り(移動平均クロス)
+#   レンジ相場   → 逆張り(価格と％)
+# を自動で切り替える。
+#
+#   python3 -m fxtrade backtest --config config.regime.example.yaml --n 800 --show-trades
+#   python3 -m fxtrade paper    --config config.regime.example.yaml --n 800
+
+symbol: USD_JPY
+initial_cash: 1000000
+
+strategy:
+  name: regime
+  params:
+    adx_period: 14           # ADXの計算期間
+    adx_threshold: 25        # これ以上ならトレンド相場と判定
+    warmup_hold: true        # ADXが確定するまでは売買しない
+
+    # --- トレンド相場で使う戦略（順張り） ---
+    trend:
+      name: ma_cross
+      params:
+        fast_period: 20      # 短期移動平均
+        slow_period: 50      # 長期移動平均
+        ma_type: ema         # ema / sma
+        allow_short: true    # 売りも使う
+        stop_loss_pct: 1.5   # 損切り%
+        take_profit_pct: 0.0 # 0=利確せずクロスまで持つ(利大損小を狙う)
+        trailing_enabled: true
+        trailing_pct: 1.0
+        trailing_activate_pct: 1.0
+
+    # --- レンジ相場で使う戦略（逆張り） ---
+    ranging:
+      name: price_percent
+      params:
+        direction: long
+        entry_drop_pct: 0.5
+        take_profit_pct: 1.0
+        stop_loss_pct: 2.0
+        nanpin_enabled: false   # レンジでもナンピンは慎重に
+        trailing_enabled: true
+        trailing_pct: 0.5
+        trailing_activate_pct: 0.5
+
+risk:
+  risk_per_trade_pct: 1.0
+  max_units: 100000
+  max_positions: 1
+
+broker:
+  name: paper
+  params:
+    spread_pips: 0.2
+    pip_size: 0.01

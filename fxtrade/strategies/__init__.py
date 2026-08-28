@@ -2,10 +2,14 @@
 
 from .base import Strategy, Signal, SignalType
 from .price_percent import PricePercentStrategy
+from .ma_cross import MACrossStrategy
+from .regime import RegimeFilterStrategy
 
 # 設定ファイルの strategy.name からクラスを引くためのレジストリ。
 REGISTRY = {
-    "price_percent": PricePercentStrategy,
+    "price_percent": PricePercentStrategy,   # 逆張り（価格と％）
+    "ma_cross": MACrossStrategy,             # 順張り（移動平均クロス）
+    "regime": RegimeFilterStrategy,          # ADXで順張り/逆張りを自動切替
 }
 
 
@@ -22,6 +26,8 @@ __all__ = [
     "Signal",
     "SignalType",
     "PricePercentStrategy",
+    "MACrossStrategy",
+    "RegimeFilterStrategy",
     "REGISTRY",
     "build_strategy",
 ]
