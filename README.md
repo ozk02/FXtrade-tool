@@ -54,6 +54,21 @@ python3 -m fxtrade ui
 
 > 表示されるのはツール内蔵のシミュレーション結果です。実際の発注は行いません。
 
+### NAS / Docker で常時稼働させる 🐳
+
+NAS（UGREEN NASync / Synology / QNAP など）や任意のDocker環境で動かせます。
+NASは24時間動いているので、PCを立ち上げなくても**スマホやタブレットからいつでも**
+デモ画面を開けます。
+
+```bash
+docker compose up -d      # 起動 → http://<NASのIP>:8000
+```
+
+手順の詳細は **[docs/nas-docker.md](docs/nas-docker.md)** を参照。
+
+> ⚠️ このUIには認証がありません。**家庭内LAN限定**で使い、インターネットには公開しないでください。
+> また、NASで動くのは**検証UIのみ**です（MT4での実売買はWindowsが必要なのでVPSを使ってください）。
+
 ### Windows: デスクトップのアイコンから起動する 🖥️
 
 毎回コマンドを打たなくて済むように、ダブルクリックで起動できます。

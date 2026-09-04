@@ -1,0 +1,17 @@
+# NAS(UGREEN UGOS Pro / Synology / QNAP)やPCでの起動用。
+#
+#   docker compose up -d      # 起動
+#   docker compose down       # 停止
+#
+# 起動後、同じLAN内の端末から http://<NASのIP>:8000 で開ける。
+# ⚠️ このUIに認証は無い。家庭内LAN限定で使い、インターネットには公開しないこと。
+services:
+  fxtrade-ui:
+    build: .
+    image: fxtrade-tool:latest
+    container_name: fxtrade-ui
+    ports:
+      - "8000:8000"      # 左側を変えれば別ポートにできる (例 "8080:8000")
+    volumes:
+      - ./data:/app/data # ヒストリカルCSVを置く場所。NAS上の共有フォルダを指定してもよい
+    restart: unless-stopped

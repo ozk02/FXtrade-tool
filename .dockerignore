@@ -1,0 +1,12 @@
+.git
+.gitignore
+tests/
+__pycache__/
+**/__pycache__/
+*.pyc
+data/*.csv
+mt4/
+docs/
+*.bat
+*.ps1
+README.md
