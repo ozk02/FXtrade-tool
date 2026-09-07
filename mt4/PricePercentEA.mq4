@@ -42,11 +42,18 @@ input double  MaxLots             = 5.0;     // 最大ロット上限
 input int     Slippage            = 10;      // 許容スリッページ(point)
 input int     MagicNumber         = 20240601;// EA識別番号(他EAと重複しない値)
 
+input string  Sec_Publish         = "===== ライブ配信(任意) =====";
+input bool    PublishEnabled      = false;   // 口座状況を自分のサイトへ送信する
+input string  PublishUrl          = "http://example.com:8080/api/live"; // 送信先URL
+input string  PublishToken        = "";      // サイト側と同じ秘密トークン
+input int     PublishIntervalSec  = 30;      // 送信間隔(秒)。短くしすぎない
+
 //=== 内部状態（tickをまたいで保持） ==============================
 double g_anchor       = 0.0;
 bool   g_anchorSet    = false;
 double g_trailBestPct = -1.0e9;
 bool   g_trailActive  = false;
+datetime g_lastPublish = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -171,6 +178,8 @@ void CloseAll(string reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   PublishStatus();   // ライブ配信（PublishEnabled=false なら何もしない）
+
    int    count; double totalLots, avgPrice, firstEntry;
    Scan(count, totalLots, avgPrice, firstEntry);
 
@@ -242,6 +251,91 @@ void OnTick()
             OpenOrder(MathPow(NanpinSizeMult, adds), "nanpin#"+IntegerToString(adds+1));
       }
    }
+}
+
+//+------------------------------------------------------------------+
+//| ライブ配信: 口座状況を自分のサイトへ JSON で送信する               |
+//|                                                                  |
+//| ※ WebRequest は同期処理（応答を待つ間EAが止まる）なので、        |
+//|   PublishIntervalSec で間引き、タイムアウトも短くしてある。       |
+//| ※ 事前に [ツール]→[オプション]→[エキスパートアドバイザ] の      |
+//|   「WebRequest を許可する URL リスト」に送信先を登録すること。    |
+//+------------------------------------------------------------------+
+string JsonEscape(string text)
+{
+   StringReplace(text, "\\", "\\\\");
+   StringReplace(text, "\"", "\\\"");
+   return(text);
+}
+
+void PublishStatus()
+{
+   if(!PublishEnabled) return;
+   if(PublishToken == "" || PublishUrl == "") return;
+   if(TimeCurrent() - g_lastPublish < PublishIntervalSec) return;
+   g_lastPublish = TimeCurrent();
+
+   // --- 保有ポジションを集計 ---
+   string posJson = "";
+   int    cnt = 0;
+   double openProfit = 0;
+   for(int i=OrdersTotal()-1; i>=0; i--)
+   {
+      if(!OrderSelect(i, SELECT_BY_POS, MODE_TRADES)) continue;
+      if(OrderMagicNumber()!=MagicNumber) continue;
+      if(OrderType()!=OP_BUY && OrderType()!=OP_SELL) continue;
+      double p = OrderProfit() + OrderSwap() + OrderCommission();
+      openProfit += p;
+      if(cnt > 0) posJson += ",";
+      posJson += StringFormat("{\"side\":\"%s\",\"symbol\":\"%s\",\"lots\":%.2f,\"open_price\":%.5f,\"profit\":%.2f}",
+                              (OrderType()==OP_BUY ? "BUY" : "SELL"), OrderSymbol(),
+                              OrderLots(), OrderOpenPrice(), p);
+      cnt++;
+   }
+
+   // --- 本日の確定損益 ---
+   double todayProfit = 0;
+   int    todayTrades = 0;
+   datetime dayStart = iTime(_Symbol, PERIOD_D1, 0);
+   for(int j=OrdersHistoryTotal()-1; j>=0; j--)
+   {
+      if(!OrderSelect(j, SELECT_BY_POS, MODE_HISTORY)) continue;
+      if(OrderMagicNumber()!=MagicNumber) continue;
+      if(OrderType()!=OP_BUY && OrderType()!=OP_SELL) continue;
+      if(OrderCloseTime() < dayStart) continue;
+      todayProfit += OrderProfit() + OrderSwap() + OrderCommission();
+      todayTrades++;
+   }
+
+   double marginLevel = (AccountMargin() > 0) ? AccountEquity()/AccountMargin()*100.0 : 0;
+   string note = StringFormat("%s TP%.1f%% SL%.1f%%%s%s",
+                              (Direction==0 ? "押し目買い" : "戻り売り"),
+                              TakeProfitPct, StopLossPct,
+                              (NanpinEnabled ? " +ナンピン" : ""),
+                              (TrailingEnabled ? " +トレーリング" : ""));
+
+   string json = StringFormat(
+      "{\"account\":\"%d\",\"broker\":\"%s\",\"symbol\":\"%s\",\"currency\":\"%s\","
+      "\"balance\":%.2f,\"equity\":%.2f,\"margin_level\":%.2f,"
+      "\"profit_open\":%.2f,\"profit_today\":%.2f,\"trades_today\":%d,"
+      "\"note\":\"%s\",\"positions\":[%s]}",
+      AccountNumber(), JsonEscape(AccountCompany()), _Symbol, AccountCurrency(),
+      AccountBalance(), AccountEquity(), marginLevel,
+      openProfit, todayProfit, todayTrades, JsonEscape(note), posJson);
+
+   char post[], result[];
+   string resultHeaders;
+   StringToCharArray(json, post, 0, StringLen(json), CP_UTF8);
+   string headers = "Content-Type: application/json\r\nX-Auth-Token: " + PublishToken + "\r\n";
+
+   ResetLastError();
+   int res = WebRequest("POST", PublishUrl, headers, 3000, post, result, resultHeaders);
+   if(res == -1)
+      Print("ライブ配信の送信に失敗 err=", GetLastError(),
+            " / URLが未許可の可能性があります。[ツール]→[オプション]→[エキスパートアドバイザ]の",
+            "「WebRequestを許可するURLリスト」に ", PublishUrl, " を追加してください。");
+   else if(res != 200)
+      Print("ライブ配信サーバーが HTTP ", res, " を返しました: ", CharArrayToString(result));
 }
 
 //+------------------------------------------------------------------+

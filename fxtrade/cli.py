@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from decimal import Decimal
 
@@ -108,6 +109,22 @@ def cmd_ui(args) -> int:
     return 0
 
 
+def cmd_live(args) -> int:
+    from .livesite import serve as serve_live
+
+    token = args.token or os.environ.get("FXTRADE_LIVE_TOKEN", "")
+    if not token:
+        print(
+            "エラー: 公開トークンが必要です。\n"
+            "  例) python3 -m fxtrade live --token あなたの秘密の文字列\n"
+            "  または環境変数 FXTRADE_LIVE_TOKEN に設定してください。",
+            file=sys.stderr,
+        )
+        return 1
+    serve_live(host=args.host, port=args.port, token=token, title=args.title)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fxtrade", description="価格と％で売買するFX自動売買ツール")
     sub = p.add_subparsers(dest="command", required=True)
@@ -141,6 +158,13 @@ def build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--port", type=int, default=8000)
     ui.add_argument("--no-browser", action="store_true", help="ブラウザを自動で開かない")
     ui.set_defaults(func=cmd_ui)
+
+    lv = sub.add_parser("live", help="ライブ配信サイトを起動 (MT4のEAから状況を受信して公開)")
+    lv.add_argument("--host", default="0.0.0.0")
+    lv.add_argument("--port", type=int, default=8080)
+    lv.add_argument("--token", default=None, help="EAからの送信を認証する秘密の文字列(必須)")
+    lv.add_argument("--title", default="FX ライブ配信", help="ページのタイトル")
+    lv.set_defaults(func=cmd_live)
 
     return p
 
