@@ -28,7 +28,7 @@
 - **リスク管理** — 1トレードのリスク%からロット自動計算、最大ポジション数の制御。
 - **ブラウザUI** — `python3 -m fxtrade ui` でフォーム＆チャート表示。コマンド不要で試せる。
 - **ライブ配信サイト** — EAから口座状況を受信し、公開ページでリアルタイム表示。
-- **テスト付き** — `unittest` で 85 ケース。
+- **テスト付き** — `unittest` で 91 ケース。
 
 ## 実際にFX自動売買するなら：楽天MT4 用EA 🤖
 
@@ -175,6 +175,7 @@ fxtrade/
 ├── webui.py             ブラウザUI (標準ライブラリのみのWebサーバ+画面)
 ├── livesite.py          ライブ配信サイト (EAからの受信 + 公開ページ)
 ├── livestore.py         配信データの正規化・保持 (口座番号マスク等)
+├── sns_icons.py         公式SNSロゴのSVGデータ (Simple Icons / CC0)
 ├── data/                マーケットデータ供給 (CSV / 合成データ)
 ├── strategies/          戦略 (base / price_percent / ma_cross / regime, レジストリ)
 └── brokers/             ブローカー

@@ -230,3 +230,51 @@ class TestSnsLinksCommand(unittest.TestCase):
         code, _, err = self.run_cli(["sns-links", "--line-url", "http://line.me/x"])
         self.assertEqual(code, 1)
         self.assertIn("https://", err)
+
+
+class TestSocialIcons(unittest.TestCase):
+    ALL = TestSocialLinks.ALL
+
+    def test_icons_link_to_each_account(self):
+        from fxtrade.livesite import render_social_icons
+        html = render_social_icons(self.ALL)
+        for url in self.ALL.values():
+            self.assertIn(f'href="{url}"', html)
+        self.assertEqual(html.count("<svg"), 4)
+        self.assertEqual(html.count('target="_blank"'), 4)
+        self.assertEqual(html.count('rel="noopener noreferrer"'), 4)
+
+    def test_icons_have_accessible_labels(self):
+        from fxtrade.livesite import render_social_icons
+        html = render_social_icons(self.ALL)
+        for label in ("公式LINE", "公式X", "公式Facebook", "公式Instagram"):
+            self.assertIn(f'aria-label="{label}"', html)   # 読み上げ用
+            self.assertIn(f'title="{label}"', html)        # マウスを乗せたときの表示
+        self.assertEqual(html.count('aria-hidden="true"'), 4)  # SVG自体は読み上げない
+
+    def test_uses_official_brand_colors(self):
+        from fxtrade.livesite import render_social_icons
+        html = render_social_icons(self.ALL)
+        self.assertIn('fill="#00C300"', html)   # LINE
+        self.assertIn('fill="#000000"', html)   # X
+        self.assertIn('fill="#0866FF"', html)   # Facebook
+        self.assertIn('fill="url(#sns-ig-grad)"', html)   # Instagram はグラデーション
+
+    def test_instagram_gradient_only_when_needed(self):
+        from fxtrade.livesite import render_social_icons
+        self.assertNotIn("linearGradient", render_social_icons({"x": "https://x.com/a"}))
+
+    def test_icons_validate_and_escape_like_buttons(self):
+        from fxtrade.livesite import render_social_icons
+        with self.assertRaises(ValueError):
+            render_social_icons({"line": "javascript:alert(1)"})
+        html = render_social_icons({"x": 'https://x.com/a"><script>alert(1)</script>'})
+        self.assertNotIn("<script>", html)
+        self.assertEqual(render_social_icons({}), "")
+
+    def test_cli_style_icons(self):
+        code, out, _ = TestSnsLinksCommand().run_cli(
+            ["sns-links", "--style", "icons", "--line-url", "https://lin.ee/a"])
+        self.assertEqual(code, 0)
+        self.assertIn('class="sns-icons"', out)
+        self.assertIn("<svg", out)

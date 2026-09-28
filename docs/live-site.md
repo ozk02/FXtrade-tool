@@ -111,6 +111,21 @@ python3 -m fxtrade sns-links --line-url "https://lin.ee/xxxxxxx" --x-url "https:
 `sns.html` の中身を、HP編集画面の「カスタムHTML」ブロックなどに**そのまま貼り付け**てください。
 スタイルは全部タグの中に書き込んであるので、どのサイトに貼っても見た目が崩れません（白背景・黒背景どちらでも可）。
 
+### フッター向け：ロゴだけの丸アイコン
+
+`--style icons` を付けると、文字なしの**公式ロゴの丸アイコン**になります。押すと各SNSが新しいタブで開きます。
+白い丸の中にブランドカラーのロゴを置くので、**フッターの背景が明るくても暗くても見えます**。
+
+```bash
+python3 -m fxtrade sns-links --style icons --line-url "https://lin.ee/xxxxxxx" --x-url "https://x.com/あなたのID" \
+  --facebook-url "https://www.facebook.com/あなたのページ" --instagram-url "https://www.instagram.com/あなたのID/" \
+  --out sns-footer.html
+```
+
+- ロゴは [Simple Icons](https://simpleicons.org/)（CC0ライセンス）の公式データを使用（`fxtrade/sns_icons.py`）
+- マウスを乗せると少し浮き上がり、SNS名が表示されます
+- 読み上げソフト向けに「公式LINE」などのラベルを付けてあります
+
 ### 各SNSのURLの調べ方
 
 | SNS | URLの例 | 調べ方 |

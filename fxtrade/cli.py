@@ -132,10 +132,11 @@ def _add_sns_args(parser) -> None:
 
 def cmd_sns_links(args) -> int:
     """他のホームページに貼り付けるための、公式SNSボタンのHTMLを出力する。"""
-    from .livesite import render_social_links
+    from .livesite import render_social_icons, render_social_links
 
+    render = render_social_icons if args.style == "icons" else render_social_links
     try:
-        html = render_social_links(_collect_links(args))
+        html = render(_collect_links(args))
     except ValueError as exc:
         print(f"エラー: {exc}", file=sys.stderr)
         return 1
@@ -217,6 +218,8 @@ def build_parser() -> argparse.ArgumentParser:
     sn = sub.add_parser("sns-links", help="公式SNSボタンのHTMLを出力 (他のホームページに貼り付け用)")
     _add_sns_args(sn)
     sn.add_argument("--out", default=None, help="書き出すファイル名 (省略時は画面に表示)")
+    sn.add_argument("--style", choices=["buttons", "icons"], default="buttons",
+                    help="buttons=文字入りボタン / icons=ロゴだけの丸アイコン(フッター向け)")
     sn.set_defaults(func=cmd_sns_links)
 
     return p

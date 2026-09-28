@@ -159,6 +159,54 @@ def render_social_links(links) -> str:
     )
 
 
+def render_social_icons(links, size: int = 44) -> str:
+    """フッター向け: 押すと各SNSに飛ぶ丸いアイコンのHTMLを返す。
+
+    白い丸の中にブランドカラーのロゴを置くので、フッターの背景が明るくても暗くても見える
+    （黒いXのロゴをそのまま置くと暗い背景で消えるため）。
+    スタイルはインラインが基本。ホバー時の浮き上がりだけ <style> で付ける
+    （サイト側で <style> が削除されてもリンク自体は正常に動く）。
+    """
+    from .sns_icons import SNS_ICONS
+
+    links = validate_links(links)
+    if not links:
+        return ""
+    icon = max(16, int(size * 0.55))
+    items = []
+    for key, label, _bg, _text in SOCIAL_SERVICES:
+        url = links.get(key)
+        if not url:
+            continue
+        color, path = SNS_ICONS[key]
+        defs, fill = "", color
+        if key == "instagram":
+            # Instagram は公式ロゴに近いグラデーションで塗る
+            defs = ('<defs><linearGradient id="sns-ig-grad" x1="0" y1="1" x2="1" y2="0">'
+                    '<stop offset="0" stop-color="#FEDA75"/><stop offset=".25" stop-color="#FA7E1E"/>'
+                    '<stop offset=".5" stop-color="#D62976"/><stop offset=".75" stop-color="#962FBF"/>'
+                    '<stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs>')
+            fill = "url(#sns-ig-grad)"
+        items.append(
+            f'<a href="{_escape(url)}" target="_blank" rel="noopener noreferrer" '
+            f'aria-label="{_escape(label)}" title="{_escape(label)}" '
+            f'style="display:inline-flex;align-items:center;justify-content:center;'
+            f'width:{size}px;height:{size}px;border-radius:50%;background:#fff;'
+            f'border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.15);text-decoration:none;">'
+            f'<svg viewBox="0 0 24 24" width="{icon}" height="{icon}" aria-hidden="true" focusable="false" '
+            f'style="display:block;">{defs}<path fill="{fill}" d="{_escape(path)}"/></svg></a>'
+        )
+    return (
+        '<style>.sns-icons a{transition:transform .15s ease,box-shadow .15s ease}'
+        '.sns-icons a:hover,.sns-icons a:focus-visible{transform:translateY(-2px);'
+        'box-shadow:0 4px 12px rgba(0,0,0,.25)!important}</style>'
+        '<nav class="sns-icons" aria-label="公式SNS" '
+        'style="display:flex;flex-wrap:wrap;gap:14px;justify-content:center;align-items:center;padding:8px 0;">'
+        + "".join(items)
+        + "</nav>"
+    )
+
+
 def _social_panel(links) -> str:
     html = render_social_links(links)
     if not html:
