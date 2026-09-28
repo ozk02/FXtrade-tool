@@ -21,6 +21,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .livestore import OFFLINE_AFTER_SEC, LiveStore
@@ -32,6 +33,7 @@ class LiveHandler(BaseHTTPRequestHandler):
     store: LiveStore = None      # serve() が差し込む
     token: str = ""
     title: str = "FX ライブ配信"
+    links: dict = {}
 
     def log_message(self, *args):
         pass  # アクセスログは出さない（必要ならここで記録）
@@ -40,7 +42,8 @@ class LiveHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            body = PAGE.replace("__TITLE__", _escape(self.title)).encode("utf-8")
+            body = (PAGE.replace("__TITLE__", _escape(self.title))
+                    .replace("__SOCIAL_PANEL__", _social_panel(self.links))).encode("utf-8")
             self._send(200, "text/html; charset=utf-8", body)
         elif path == "/api/live/status":
             self._json(200, self.store.snapshot())
@@ -102,23 +105,88 @@ def _escape(s: str) -> str:
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def make_server(host: str, port: int, token: str, title: str = "FX ライブ配信", store: LiveStore = None):
+# 公式SNSの表示定義: (設定キー, 表示名, 背景, アイコン文字)
+# ブランドロゴの画像は使わず、各社のブランドカラーと文字で表現する（外部ファイル不要）。
+SOCIAL_SERVICES = [
+    ("line", "公式LINE", "#06C755", "LINE"),
+    ("x", "公式X", "#000000", "𝕏"),
+    ("facebook", "公式Facebook", "#1877F2", "f"),
+    ("instagram", "公式Instagram",
+     "linear-gradient(45deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888)", "IG"),
+]
+
+
+def validate_links(links) -> dict:
+    """SNSのURLを検証する。https:// 以外（javascript: など）は拒否する。
+
+    空のものは無視するので、持っているSNSだけ指定すればよい。
+    """
+    out = {}
+    for key, label, _bg, _icon in SOCIAL_SERVICES:
+        url = ((links or {}).get(key) or "").strip()
+        if not url:
+            continue
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError(f"{label} のURLは https:// で始まる必要があります: {url}")
+        out[key] = url
+    return out
+
+
+def render_social_links(links) -> str:
+    """公式SNSボタンのHTMLを返す。スタイルは全てインライン（どのHPに貼っても崩れない）。"""
+    links = validate_links(links)
+    if not links:
+        return ""
+    buttons = []
+    for key, label, bg, icon in SOCIAL_SERVICES:
+        url = links.get(key)
+        if not url:
+            continue
+        border = "border:1px solid #444;" if key == "x" else ""
+        buttons.append(
+            f'<a href="{_escape(url)}" target="_blank" rel="noopener noreferrer" '
+            f'aria-label="{_escape(label)}" '
+            f'style="display:inline-flex;align-items:center;gap:8px;padding:9px 16px;'
+            f'border-radius:999px;background:{bg};{border}color:#fff;text-decoration:none;'
+            f'font-weight:700;font-size:14px;font-family:system-ui,sans-serif;line-height:1;">'
+            f'<span style="font-weight:800;">{_escape(icon)}</span>{_escape(label)}</a>'
+        )
+    return (
+        '<div class="sns-links" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">'
+        + "".join(buttons)
+        + "</div>"
+    )
+
+
+def _social_panel(links) -> str:
+    html = render_social_links(links)
+    if not html:
+        return ""
+    return '<div class="panel"><h2>公式SNS</h2>' + html + "</div>"
+
+
+def make_server(host: str, port: int, token: str, title: str = "FX ライブ配信",
+                store: LiveStore = None, links: dict = None):
     """サーバーを組み立てて返す（テストから使えるように serve と分離）。"""
     if not token:
         raise ValueError(
             "公開トークンが未設定です。--token か環境変数 FXTRADE_LIVE_TOKEN を指定してください。"
         )
     store = store or LiveStore()
+    links = validate_links(links)   # 起動時に検証（不正URLなら起動しない）
 
-    handler = type("BoundLiveHandler", (LiveHandler,), {"store": store, "token": token, "title": title})
+    handler = type("BoundLiveHandler", (LiveHandler,),
+                   {"store": store, "token": token, "title": title, "links": links})
     server = ThreadingHTTPServer((host, port), handler)
     server.store = store
     return server
 
 
-def serve(host: str = "0.0.0.0", port: int = 8080, token: str = "", title: str = "FX ライブ配信") -> None:
+def serve(host: str = "0.0.0.0", port: int = 8080, token: str = "", title: str = "FX ライブ配信",
+          links: dict = None) -> None:
     token = token or os.environ.get("FXTRADE_LIVE_TOKEN", "")
-    server = make_server(host, port, token, title)
+    server = make_server(host, port, token, title, links=links)
     print(f"ライブ配信サイトを起動しました → http://{host}:{port}")
     print(f"  公開ページ  : GET  /")
     print(f"  EAの送信先  : POST /api/live   (ヘッダ X-Auth-Token にトークン)")
@@ -203,6 +271,8 @@ PAGE = r"""<!DOCTYPE html>
       <tbody id="rows"></tbody>
     </table>
   </div>
+
+  __SOCIAL_PANEL__
 
   <footer>
     <div id="meta" class="muted"></div>

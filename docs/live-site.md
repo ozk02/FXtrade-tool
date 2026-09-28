@@ -82,6 +82,49 @@ MT4は安全のため、許可したURL以外へは送信できません。
 
 ---
 
+## 公式SNS（LINE / X / Facebook / Instagram）を載せる
+
+配信ページの下部に、公式SNSへのボタンを表示できます。**持っているSNSだけ**指定すればOKです。
+
+```bash
+python3 -m fxtrade live --port 8080 --token "秘密の文字列" --title "公式FXライブ" \
+  --line-url      "https://lin.ee/xxxxxxx" \
+  --x-url         "https://x.com/あなたのID" \
+  --facebook-url  "https://www.facebook.com/あなたのページ" \
+  --instagram-url "https://www.instagram.com/あなたのID/"
+```
+
+環境変数でも指定できます（Dockerで使うときに便利）:
+`FXTRADE_LINE_URL` / `FXTRADE_X_URL` / `FXTRADE_FACEBOOK_URL` / `FXTRADE_INSTAGRAM_URL`
+
+### 別の公式ホームページに貼りたい場合
+
+WordPress・Wix・ペライチなど、**別の場所にある公式HP**に載せたいときは、
+貼り付け用のHTMLを出力できます。
+
+```bash
+python3 -m fxtrade sns-links --line-url "https://lin.ee/xxxxxxx" --x-url "https://x.com/あなたのID" \
+  --facebook-url "https://www.facebook.com/あなたのページ" --instagram-url "https://www.instagram.com/あなたのID/" \
+  --out sns.html
+```
+
+`sns.html` の中身を、HP編集画面の「カスタムHTML」ブロックなどに**そのまま貼り付け**てください。
+スタイルは全部タグの中に書き込んであるので、どのサイトに貼っても見た目が崩れません（白背景・黒背景どちらでも可）。
+
+### 各SNSのURLの調べ方
+
+| SNS | URLの例 | 調べ方 |
+|---|---|---|
+| 公式LINE | `https://lin.ee/xxxxxxx` | LINE Official Account Manager →「友だち追加ガイド」→ URLをコピー |
+| 公式X | `https://x.com/ユーザー名` | 自分のプロフィールを開いてURLをコピー |
+| 公式Facebook | `https://www.facebook.com/ページ名` | Facebookページを開いてURLをコピー |
+| 公式Instagram | `https://www.instagram.com/ユーザー名/` | プロフィールを開いてURLをコピー |
+
+> 🔒 安全のため、URLは **`https://` で始まるものだけ**受け付けます（`http://` や
+> `javascript:` などはエラーになり、サーバーも起動しません）。
+> ボタンは新しいタブで開き（`target="_blank"`）、`rel="noopener noreferrer"` を付けて
+> 元のページが乗っ取られないようにしてあります。
+
 ## トラブルシューティング
 
 | 症状 | 原因と対処 |

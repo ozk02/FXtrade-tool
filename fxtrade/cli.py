@@ -109,6 +109,48 @@ def cmd_ui(args) -> int:
     return 0
 
 
+SNS_ENV = {
+    "line": "FXTRADE_LINE_URL",
+    "x": "FXTRADE_X_URL",
+    "facebook": "FXTRADE_FACEBOOK_URL",
+    "instagram": "FXTRADE_INSTAGRAM_URL",
+}
+
+
+def _collect_links(args) -> dict:
+    """--line-url 等の引数を優先し、無ければ環境変数から公式SNSのURLを集める。"""
+    return {key: (getattr(args, f"{key}_url", None) or os.environ.get(env, ""))
+            for key, env in SNS_ENV.items()}
+
+
+def _add_sns_args(parser) -> None:
+    parser.add_argument("--line-url", dest="line_url", default=None, help="公式LINEのURL (https://lin.ee/... 等)")
+    parser.add_argument("--x-url", dest="x_url", default=None, help="公式XのURL (https://x.com/...)")
+    parser.add_argument("--facebook-url", dest="facebook_url", default=None, help="公式FacebookのURL")
+    parser.add_argument("--instagram-url", dest="instagram_url", default=None, help="公式InstagramのURL")
+
+
+def cmd_sns_links(args) -> int:
+    """他のホームページに貼り付けるための、公式SNSボタンのHTMLを出力する。"""
+    from .livesite import render_social_links
+
+    try:
+        html = render_social_links(_collect_links(args))
+    except ValueError as exc:
+        print(f"エラー: {exc}", file=sys.stderr)
+        return 1
+    if not html:
+        print("エラー: SNSのURLが1つも指定されていません。--line-url などを指定してください。", file=sys.stderr)
+        return 1
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            f.write(html + "\n")
+        print(f"公式SNSボタンのHTMLを書き出しました -> {args.out}")
+    else:
+        print(html)
+    return 0
+
+
 def cmd_live(args) -> int:
     from .livesite import serve as serve_live
 
@@ -121,7 +163,12 @@ def cmd_live(args) -> int:
             file=sys.stderr,
         )
         return 1
-    serve_live(host=args.host, port=args.port, token=token, title=args.title)
+    try:
+        serve_live(host=args.host, port=args.port, token=token, title=args.title,
+                   links=_collect_links(args))
+    except ValueError as exc:
+        print(f"エラー: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -164,7 +211,13 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--port", type=int, default=8080)
     lv.add_argument("--token", default=None, help="EAからの送信を認証する秘密の文字列(必須)")
     lv.add_argument("--title", default="FX ライブ配信", help="ページのタイトル")
+    _add_sns_args(lv)
     lv.set_defaults(func=cmd_live)
+
+    sn = sub.add_parser("sns-links", help="公式SNSボタンのHTMLを出力 (他のホームページに貼り付け用)")
+    _add_sns_args(sn)
+    sn.add_argument("--out", default=None, help="書き出すファイル名 (省略時は画面に表示)")
+    sn.set_defaults(func=cmd_sns_links)
 
     return p
 

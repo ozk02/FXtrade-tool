@@ -28,7 +28,7 @@
 - **リスク管理** — 1トレードのリスク%からロット自動計算、最大ポジション数の制御。
 - **ブラウザUI** — `python3 -m fxtrade ui` でフォーム＆チャート表示。コマンド不要で試せる。
 - **ライブ配信サイト** — EAから口座状況を受信し、公開ページでリアルタイム表示。
-- **テスト付き** — `unittest` で 74 ケース。
+- **テスト付き** — `unittest` で 85 ケース。
 
 ## 実際にFX自動売買するなら：楽天MT4 用EA 🤖
 
@@ -66,6 +66,9 @@ python3 -m fxtrade live --port 8080 --token "秘密の文字列" --title "私の
 有効証拠金・本日の損益・保有ポジション・資産推移グラフが表示され、2分更新が無いと
 「オフライン」表示になります。EA側は `PublishEnabled=true` と送信先URL・トークンを設定するだけ。
 動画配信と違いCPUをほぼ使わないので、FX専用VPSでも安全に動きます。
+
+公式LINE / X / Facebook / Instagram のボタンも載せられます（`--line-url` などを指定）。
+別の公式ホームページに貼りたい場合は `python3 -m fxtrade sns-links ...` で貼り付け用HTMLを出力できます。
 
 手順の詳細は **[docs/live-site.md](docs/live-site.md)**。
 
@@ -168,7 +171,7 @@ fxtrade/
 ├── risk.py              リスク管理・ポジションサイジング
 ├── engine.py            ライブ/ペーパー売買エンジン
 ├── backtest.py          バックテストエンジン + 統計
-├── cli.py               CLI (ui / live / gen-data / backtest / paper)
+├── cli.py               CLI (ui / live / sns-links / gen-data / backtest / paper)
 ├── webui.py             ブラウザUI (標準ライブラリのみのWebサーバ+画面)
 ├── livesite.py          ライブ配信サイト (EAからの受信 + 公開ページ)
 ├── livestore.py         配信データの正規化・保持 (口座番号マスク等)

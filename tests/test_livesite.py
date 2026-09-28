@@ -126,3 +126,107 @@ class TestServerRequiresToken(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSocialLinks(unittest.TestCase):
+    ALL = {
+        "line": "https://lin.ee/abc123",
+        "x": "https://x.com/example",
+        "facebook": "https://www.facebook.com/example",
+        "instagram": "https://www.instagram.com/example/",
+    }
+
+    def test_renders_all_four_in_order(self):
+        from fxtrade.livesite import render_social_links
+        html = render_social_links(self.ALL)
+        labels = ["公式LINE", "公式X", "公式Facebook", "公式Instagram"]
+        positions = [html.index(f'aria-label="{l}"') for l in labels]
+        self.assertEqual(positions, sorted(positions))   # LINE→X→Facebook→Instagram の順
+        self.assertEqual(html.count('rel="noopener noreferrer"'), 4)
+        self.assertEqual(html.count('target="_blank"'), 4)
+
+    def test_only_configured_services_shown(self):
+        from fxtrade.livesite import render_social_links
+        html = render_social_links({"line": "https://lin.ee/a", "instagram": ""})
+        self.assertIn("公式LINE", html)
+        self.assertNotIn("公式Instagram", html)
+        self.assertNotIn("公式X", html)
+
+    def test_empty_returns_nothing(self):
+        from fxtrade.livesite import render_social_links
+        self.assertEqual(render_social_links({}), "")
+        self.assertEqual(render_social_links(None), "")
+
+    def test_rejects_non_https(self):
+        from fxtrade.livesite import validate_links
+        for bad in ("javascript:alert(1)", "http://x.com/a", "data:text/html,hi", "x.com/a", "https://"):
+            with self.subTest(url=bad):
+                with self.assertRaises(ValueError):
+                    validate_links({"x": bad})
+
+    def test_markup_in_url_is_escaped(self):
+        from fxtrade.livesite import render_social_links
+        html = render_social_links({"x": 'https://x.com/a"><script>alert(1)</script>'})
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_page_includes_panel_only_when_configured(self):
+        with_links = make_server("127.0.0.1", 0, token="t", links=self.ALL)
+        without = make_server("127.0.0.1", 0, token="t")
+        try:
+            for srv, expect in ((with_links, True), (without, False)):
+                port = srv.server_address[1]
+                t = threading.Thread(target=srv.serve_forever, daemon=True)
+                t.start()
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/") as r:
+                    html = r.read().decode()
+                self.assertEqual("公式SNS" in html, expect)
+                self.assertNotIn("__SOCIAL_PANEL__", html)   # プレースホルダが残らない
+        finally:
+            for srv in (with_links, without):
+                srv.shutdown()
+                srv.server_close()
+
+    def test_server_refuses_bad_url_at_startup(self):
+        with self.assertRaises(ValueError):
+            make_server("127.0.0.1", 0, token="t", links={"line": "javascript:x"})
+
+
+class TestSnsLinksCommand(unittest.TestCase):
+    def run_cli(self, argv, env=None):
+        import contextlib
+        import io
+        import os
+        from unittest import mock
+
+        from fxtrade.cli import main
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, env or {}, clear=False), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(argv)
+        return code, out.getvalue(), err.getvalue()
+
+    def test_prints_snippet(self):
+        code, out, _ = self.run_cli(["sns-links", "--line-url", "https://lin.ee/a", "--x-url", "https://x.com/b"])
+        self.assertEqual(code, 0)
+        self.assertIn("公式LINE", out)
+        self.assertIn("公式X", out)
+
+    def test_reads_from_environment(self):
+        code, out, _ = self.run_cli(["sns-links"], env={"FXTRADE_FACEBOOK_URL": "https://www.facebook.com/env"})
+        self.assertEqual(code, 0)
+        self.assertIn("facebook.com/env", out)
+
+    def test_errors_when_nothing_given(self):
+        import os
+        from unittest import mock
+        keys = ["FXTRADE_LINE_URL", "FXTRADE_X_URL", "FXTRADE_FACEBOOK_URL", "FXTRADE_INSTAGRAM_URL"]
+        with mock.patch.dict(os.environ, {k: "" for k in keys}):
+            code, _, err = self.run_cli(["sns-links"])
+        self.assertEqual(code, 1)
+        self.assertIn("1つも指定されていません", err)
+
+    def test_errors_on_bad_url(self):
+        code, _, err = self.run_cli(["sns-links", "--line-url", "http://line.me/x"])
+        self.assertEqual(code, 1)
+        self.assertIn("https://", err)
